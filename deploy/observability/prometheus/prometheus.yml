@@ -1,0 +1,32 @@
+# Prometheus собирает /metrics с агентов AskOps (Слой 4).
+# Имена сервисов разрешаются в compose-сети. action/notifier поднимаются профилем
+# "action" — пока они не запущены, Prometheus покажет их как down (это нормально).
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: orchestrator
+    static_configs:
+      - targets: ["orchestrator:8000"]
+        labels: { agent: orchestrator }
+
+  - job_name: rag
+    static_configs:
+      - targets: ["rag:8001"]
+        labels: { agent: rag }
+
+  - job_name: analyst
+    static_configs:
+      - targets: ["analyst:8002"]
+        labels: { agent: analyst }
+
+  - job_name: action
+    static_configs:
+      - targets: ["action:8003"]
+        labels: { agent: action }
+
+  - job_name: notifier
+    static_configs:
+      - targets: ["notifier:8004"]
+        labels: { agent: notifier }

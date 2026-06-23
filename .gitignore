@@ -1,0 +1,33 @@
+# Секреты — НИКОГДА не коммитим
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Кэш инструментов
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Локальные модели / кэш HuggingFace (если кладётся в репо)
+.cache/
+models/
+
+# Сгенерированные данные (синтетическая база тикетов аналитика)
+data/
+*.db
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp

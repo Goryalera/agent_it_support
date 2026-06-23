@@ -1,0 +1,5 @@
+# Агент-нотификатор: consumer Kafka/Redpanda + маленький FastAPI для /health.
+kafka-python>=2.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+prometheus-fastapi-instrumentator>=7

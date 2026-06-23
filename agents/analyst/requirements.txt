@@ -1,0 +1,9 @@
+# Аналитик-агент: NL→SQL по базе тикетов (SQLite) + A2A-сервер.
+# SQLite — из стандартной библиотеки, отдельной зависимости не нужно.
+faker>=25
+a2a-sdk==0.2.16
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+httpx>=0.27
+prometheus-fastapi-instrumentator>=7

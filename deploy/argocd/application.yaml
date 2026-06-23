@@ -1,0 +1,41 @@
+# ArgoCD Application — GitOps-описание развёртывания AskOps.
+#
+# ArgoCD следит за папкой чарта в git-репозитории и синхронизирует кластер с тем,
+# что лежит в git. Поменял тег образа в values.yaml, закоммитил → ArgoCD сам
+# применит изменение (это и есть GitOps).
+#
+# Перед применением замени repoURL на URL своего репозитория и при необходимости
+# image.owner в values.yaml.
+#
+#   kubectl apply -n argocd -f deploy/argocd/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: askops
+  namespace: argocd
+  # Финализатор: при удалении Application ArgoCD уберёт и созданные ресурсы.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/owner/askops.git   # ← заменить на свой репозиторий
+    targetRevision: HEAD
+    path: deploy/helm/askops
+    helm:
+      releaseName: askops
+      # При желании можно подставить оверрайды:
+      # valueFiles:
+      #   - values.yaml
+      parameters:
+        - name: image.owner
+          value: owner                              # ← заменить на свой GHCR owner
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: askops
+  syncPolicy:
+    automated:
+      prune: true        # удалять ресурсы, исчезнувшие из git
+      selfHeal: true     # возвращать кластер к состоянию из git при ручных правках
+    syncOptions:
+      - CreateNamespace=true

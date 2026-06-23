@@ -1,0 +1,20 @@
+# Оверрайд значений для реального LLM (GigaChat) в кластере.
+#
+# Применять поверх values.yaml:
+#   1. Создать секрет с кредами:
+#        kubectl create secret generic askops-llm \
+#          --from-literal=GIGACHAT_CREDENTIALS=<ключ> \
+#          --from-literal=GIGACHAT_SCOPE=GIGACHAT_API_PERS
+#   2. Установить чарт с этим оверрайдом:
+#        helm upgrade --install askops deploy/helm/askops \
+#          -f deploy/helm/askops/values-real.yaml \
+#          --set image.owner=<твой-github-owner>
+
+llm:
+  mode: real
+  provider: gigachat
+
+# Прокинуть креды LLM в агенты из секрета (а не из values — секреты не в git).
+extraEnvFrom:
+  - secretRef:
+      name: askops-llm

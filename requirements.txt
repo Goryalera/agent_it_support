@@ -1,0 +1,29 @@
+# Полный набор для локального запуска ВСЕГО стека из одного окружения.
+# Для Docker используются отдельные requirements внутри agents/*/.
+# -r не используем, чтобы файл был самодостаточным.
+
+# RAG
+opensearch-py>=2.4,<3
+sentence-transformers>=2.6
+gigachat>=0.1.30
+
+# Аналитик (Слой 1): синтетические тикеты в SQLite (sqlite — из stdlib)
+faker>=25
+
+# Action-агент и нотификатор (Слой 2): клиент Kafka/Redpanda
+kafka-python>=2.0
+
+# Наблюдаемость (Слой 4): /metrics для Prometheus
+prometheus-fastapi-instrumentator>=7
+
+# Агенты / A2A / web
+a2a-sdk==0.2.16
+langgraph>=0.2.20
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+httpx>=0.27
+
+# UI
+streamlit>=1.33
+requests>=2.31

@@ -1,0 +1,19 @@
+AskOps развёрнут (релиз: {{ .Release.Name }}).
+
+Включённые сервисы:
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+  - {{ $name }} (порт {{ $svc.port }}, реплик: {{ $svc.replicas | default 1 }})
+{{- end }}
+{{- end }}
+
+Проверить статусы подов:
+  kubectl get pods
+
+Открыть оркестратор локально (port-forward) и задать вопрос:
+  kubectl port-forward svc/orchestrator 8000:8000
+  curl -s http://localhost:8000/ask \
+    -H 'Content-Type: application/json' \
+    -d '{"question": "как настроить VPN"}'
+
+LLM-режим: {{ .Values.llm.mode }} (mock — без секретов; для реального LLM см. docs/DEPLOY.md).

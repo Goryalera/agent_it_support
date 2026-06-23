@@ -1,0 +1,85 @@
+# Значения чарта AskOps.
+#
+# Образы агентов берутся из GHCR (их пушит CI). Замени `owner` на свой
+# GitHub-логин/организацию (в нижнем регистре) — путь GHCR: ghcr.io/<owner>/<image>.
+
+image:
+  # Базовый реестр и владелец пакетов. Полный путь образа сервиса:
+  #   {{ registry }}/{{ owner }}/{{ service.image }}:{{ tag }}
+  registry: ghcr.io
+  owner: owner            # ← заменить на свой GitHub owner (lowercase)
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Параметры LLM. В кластере по умолчанию mock — поды поднимаются без секретов.
+# Для реального LLM поставь mode: real и подложи секрет с кредами (см. values-real.yaml).
+llm:
+  mode: mock
+  provider: gigachat
+
+# Описание сервисов. Чарт разворачивает Deployment + Service на каждый включённый.
+# Образ берётся из image.* + service.image, либо целиком из service.imageOverride.
+services:
+  orchestrator:
+    enabled: true
+    image: askops-orchestrator
+    port: 8000
+    replicas: 1
+    env:
+      RAG_AGENT_URL: "http://rag:8001"
+      ANALYST_AGENT_URL: "http://analyst:8002"
+
+  rag:
+    enabled: true
+    image: askops-rag
+    port: 8001
+    replicas: 1
+    env:
+      OPENSEARCH_HOST: "opensearch"
+      OPENSEARCH_PORT: "9200"
+      OPENSEARCH_INDEX: "askops-kb"
+      RAG_AGENT_URL: "http://rag:8001"
+      EMBEDDING_MODEL: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+      EMBEDDING_DIM: "384"
+
+  analyst:
+    enabled: true
+    image: askops-analyst
+    port: 8002
+    replicas: 1
+    env:
+      ANALYST_AGENT_URL: "http://analyst:8002"
+      TICKETS_DB_PATH: "/app/data/tickets.db"
+      TICKETS_COUNT: "2000"
+
+  # OpenSearch — внешний образ (не из GHCR), поэтому через imageOverride.
+  # Можно отключить (enabled: false), если деплоишь только агентов с mock-данными
+  # (см. примечание про ресурсы в PLAN2.md / docs/DEPLOY.md).
+  opensearch:
+    enabled: true
+    imageOverride: "opensearchproject/opensearch:2.13.0"
+    port: 9200
+    replicas: 1
+    healthPath: "/_cluster/health"
+    env:
+      discovery.type: "single-node"
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+
+# Ресурсные лимиты по умолчанию для агентов (OpenSearch тяжелее — задаётся отдельно ниже).
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Тип Service: ClusterIP достаточно (доступ через port-forward / Ingress).
+service:
+  type: ClusterIP
+
+# Дополнительные источники env для агентов (например, секрет с кредами LLM).
+# По умолчанию пусто (mock-режим). Для реального LLM — см. values-real.yaml.
+extraEnvFrom: []

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: askops
+description: AskOps — мульти-агентный помощник ИТ-поддержки (оркестратор + RAG + аналитик)
+type: application
+# Версия чарта и версия приложения. appVersion удобно держать = тегу образов.
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agents
+  - a2a
+  - rag
+  - llm
+maintainers:
+  - name: AskOps

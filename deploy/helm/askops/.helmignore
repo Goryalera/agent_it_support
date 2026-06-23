@@ -1,0 +1,7 @@
+# Паттерны файлов, которые не попадают в helm-пакет.
+.DS_Store
+.git/
+.gitignore
+*.tmp
+*.bak
+*.orig

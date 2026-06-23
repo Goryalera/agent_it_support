@@ -1,0 +1,267 @@
+# AskOps V1 — весь стек одной командой: docker compose up
+#
+# Сервисы:
+#   opensearch   — поисковый движок с kNN (single-node, security off для локалки)
+#   rag          — RAG-агент (поиск + LLM + A2A-сервер); индексирует БЗ при старте
+#   analyst      — аналитик-агент (NL→SQL по базе тикетов + A2A-сервер)
+#   orchestrator — точка входа (LangGraph + A2A-клиент + роутер), REST /ask на :8000
+#   ui           — Streamlit-демо на :8501 (необязательный)
+#
+# Перед запуском: cp .env.example .env и заполни GIGACHAT_CREDENTIALS
+# (либо поставь LLM_MODE=mock, чтобы поднять стек без кредов).
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: askops-opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      # Маленький heap, чтобы не съедал память ноутбука.
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      # Для локальной разработки отключаем плагин безопасности (без TLS и паролей).
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  rag:
+    build:
+      context: .
+      dockerfile: agents/rag/Dockerfile
+    container_name: askops-rag
+    environment:
+      - LLM_MODE=${LLM_MODE:-real}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gigachat}
+      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS:-}
+      - GIGACHAT_SCOPE=${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      - GIGACHAT_MODEL=${GIGACHAT_MODEL:-GigaChat}
+      - GIGACHAT_VERIFY_SSL_CERTS=${GIGACHAT_VERIFY_SSL_CERTS:-false}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-deepseek/deepseek-v4-flash}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-}
+      - OPENROUTER_APP_NAME=${OPENROUTER_APP_NAME:-AskOps}
+      - EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      - EMBEDDING_DIM=384
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_INDEX=askops-kb
+      - RAG_AGENT_URL=http://rag:8001
+      - RAG_TOP_K=4
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  analyst:
+    build:
+      context: .
+      dockerfile: agents/analyst/Dockerfile
+    container_name: askops-analyst
+    environment:
+      - LLM_MODE=${LLM_MODE:-real}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gigachat}
+      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS:-}
+      - GIGACHAT_SCOPE=${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      - GIGACHAT_MODEL=${GIGACHAT_MODEL:-GigaChat}
+      - GIGACHAT_VERIFY_SSL_CERTS=${GIGACHAT_VERIFY_SSL_CERTS:-false}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-deepseek/deepseek-v4-flash}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-}
+      - OPENROUTER_APP_NAME=${OPENROUTER_APP_NAME:-AskOps}
+      - ANALYST_AGENT_URL=http://analyst:8002
+      - TICKETS_DB_PATH=/app/data/tickets.db
+      - TICKETS_COUNT=${TICKETS_COUNT:-5000}
+    volumes:
+      - tickets-data:/app/data
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: agents/orchestrator/Dockerfile
+    container_name: askops-orchestrator
+    environment:
+      # LLM нужен оркестратору для классификации интента в роутере
+      # (есть запасное правило по ключевым словам, если LLM недоступен).
+      - LLM_MODE=${LLM_MODE:-real}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gigachat}
+      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS:-}
+      - GIGACHAT_SCOPE=${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      - GIGACHAT_MODEL=${GIGACHAT_MODEL:-GigaChat}
+      - GIGACHAT_VERIFY_SSL_CERTS=${GIGACHAT_VERIFY_SSL_CERTS:-false}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-deepseek/deepseek-v4-flash}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-}
+      - OPENROUTER_APP_NAME=${OPENROUTER_APP_NAME:-AskOps}
+      - RAG_AGENT_URL=http://rag:8001
+      - ANALYST_AGENT_URL=http://analyst:8002
+      # Action-агент опционален (профиль "action"); если не поднят — роутер
+      # вернёт мягкий отказ, оркестратор не падает.
+      - ACTION_AGENT_URL=http://action:8003
+    depends_on:
+      rag:
+        condition: service_healthy
+      analyst:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  # ── Слой 2: очередь событий + action-агент + нотификатор ───────────────────
+  # Поднимаются профилем, чтобы не держать Kafka постоянно (+0.5–1 ГБ):
+  #   docker compose --profile action up
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    container_name: askops-redpanda
+    profiles: ["action"]
+    command:
+      - redpanda
+      - start
+      - --mode dev-container
+      - --smp
+      - "1"
+      - --default-log-level=warn
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  action:
+    build:
+      context: .
+      dockerfile: agents/action/Dockerfile
+    container_name: askops-action
+    profiles: ["action"]
+    environment:
+      - TICKETS_DB_PATH=/app/data/tickets.db
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC=ticket-events
+      - ACTION_AGENT_URL=http://action:8003
+    volumes:
+      - tickets-data:/app/data
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  notifier:
+    build:
+      context: .
+      dockerfile: agents/notifier/Dockerfile
+    container_name: askops-notifier
+    profiles: ["action"]
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - KAFKA_TOPIC=ticket-events
+      - KAFKA_CONSUMER_GROUP=askops-notifier
+      - NOTIFICATIONS_FILE=/app/data/notifications.log
+    volumes:
+      - tickets-data:/app/data
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8004:8004"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    container_name: askops-ui
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      # Нотификатор опционален (профиль "action"); если не поднят, UI скроет блок.
+      - NOTIFIER_URL=http://notifier:8004
+    depends_on:
+      - orchestrator
+    ports:
+      - "8501:8501"
+
+  # ── Слой 4: наблюдаемость (Prometheus + Grafana) ───────────────────────────
+  # Поднимается профилем, чтобы не висеть постоянно:
+  #   docker compose --profile observability up
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: askops-prometheus
+    profiles: ["observability"]
+    volumes:
+      - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: askops-grafana
+    profiles: ["observability"]
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+
+volumes:
+  opensearch-data:
+  tickets-data:
+  grafana-data:

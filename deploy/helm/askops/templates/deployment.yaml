@@ -1,0 +1,60 @@
+{{- /*
+По одному Deployment на каждый включённый сервис из .Values.services.
+Образ, порт, число реплик и env берутся из описания сервиса. Для наших агентов
+(без imageOverride) дополнительно прокидываем настройки LLM.
+*/ -}}
+{{- $root := . -}}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    {{- include "askops.labels" $root | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        {{- include "askops.labels" $root | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: {{ include "askops.image" (dict "svc" $svc "root" $root) | quote }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $svc.port }}
+          env:
+            {{- if not $svc.imageOverride }}
+            - name: LLM_MODE
+              value: {{ $root.Values.llm.mode | quote }}
+            - name: LLM_PROVIDER
+              value: {{ $root.Values.llm.provider | quote }}
+            {{- end }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if and (not $svc.imageOverride) $root.Values.extraEnvFrom }}
+          # Секреты LLM (напр. GIGACHAT_CREDENTIALS) — из Secret, не из values.
+          envFrom:
+            {{- toYaml $root.Values.extraEnvFrom | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ $svc.healthPath | default "/health" }}
+              port: {{ $svc.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            {{- toYaml $root.Values.resources | nindent 12 }}
+{{- end }}
+{{- end }}

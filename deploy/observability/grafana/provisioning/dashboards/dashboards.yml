@@ -1,0 +1,12 @@
+# Провайдер дашбордов Grafana: подхватывает JSON из примонтированной папки.
+apiVersion: 1
+
+providers:
+  - name: AskOps
+    orgId: 1
+    folder: AskOps
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
